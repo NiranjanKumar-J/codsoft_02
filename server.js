@@ -22,3 +22,5 @@ mongoose.connect(process.env.MONGO_URI) // 2. Ippo link direct ah illa, variable
 app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
 });
+
+module.exports = app;
