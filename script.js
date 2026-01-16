@@ -1,10 +1,10 @@
-// --- 1. STATE & VARS ---
+// --- 1. CONFIG & STATE ---
+const API_URL = 'http://localhost:5000'; // Server URL
 let currentUser = localStorage.getItem('currentUser') || null;
-let users = JSON.parse(localStorage.getItem('users')) || [];
-let quizzes = JSON.parse(localStorage.getItem('quizzes')) || [];
+let quizzes = []; // Data will come from Database now
 let isLoginMode = true;
 
-// QUIZ & TIMER
+// QUIZ & TIMER STATE
 let currentActiveQuiz = null;
 let currentQuestionIndex = 0;
 let userAnswers = [];
@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else showSection('auth-section');
 });
 
-// --- 4. AUTH LOGIC ---
+// --- 4. AUTH LOGIC (Connected to Server) ---
 function toggleAuthMode() {
     isLoginMode = !isLoginMode;
     const title = document.getElementById('auth-title');
@@ -48,18 +48,38 @@ function toggleAuthMode() {
     }
 }
 
-function handleAuth() {
+async function handleAuth() {
     const name = document.getElementById('username').value.trim();
     const pass = document.getElementById('password').value.trim();
     if (!name || !pass) return showToast("Enter Username & Password!", "error");
 
-    if (isLoginMode) {
-        const user = users.find(u => u.name === name && u.pass === pass);
-        if (user) { currentUser = name; localStorage.setItem('currentUser', currentUser); showToast(`Welcome back, ${name}! 🚀`); showDashboard(); }
-        else showToast("Invalid Credentials!", "error");
-    } else {
-        if (users.find(u => u.name === name)) showToast("Username taken!", "error");
-        else { users.push({ name, pass }); localStorage.setItem('users', JSON.stringify(users)); showToast("Registered!", "success"); toggleAuthMode(); }
+    const endpoint = isLoginMode ? '/login' : '/register';
+    
+    try {
+        const response = await fetch(`${API_URL}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, pass })
+        });
+        
+        const result = await response.json();
+
+        if (result.success) {
+            if (isLoginMode) {
+                currentUser = name; 
+                localStorage.setItem('currentUser', currentUser); 
+                showToast(`Welcome back, ${name}! 🚀`); 
+                showDashboard(); 
+            } else {
+                showToast("Registered! Please Login.", "success"); 
+                toggleAuthMode(); 
+            }
+        } else {
+            showToast(result.message || "Authentication Failed", "error");
+        }
+    } catch (error) {
+        console.error(error);
+        showToast("Server Error: Is Node.js running?", "error");
     }
 }
 
@@ -70,44 +90,65 @@ function logout() {
     showSection('auth-section');
 }
 
-// --- 5. DASHBOARD & DELETE ---
+// --- 5. DASHBOARD & DELETE (Fetch from DB) ---
 function showDashboard() {
     document.getElementById('user-display').innerText = currentUser;
     renderQuizList();
     showSection('dashboard-section');
 }
 
-function renderQuizList() {
-    const list = document.getElementById('quiz-list'); list.innerHTML = '';
-    quizzes = JSON.parse(localStorage.getItem('quizzes')) || [];
-    if (quizzes.length === 0) { list.innerHTML = '<p style="text-align:center; color:var(--text-muted)">No quizzes yet.</p>'; return; }
+async function renderQuizList() {
+    const list = document.getElementById('quiz-list'); 
+    list.innerHTML = '<p style="text-align:center; color:var(--text-muted)">Loading Quizzes...</p>';
     
-    quizzes.forEach((quiz) => {
-        const div = document.createElement('div'); div.className = 'quiz-card';
-        div.innerHTML = `
-            <div class="quiz-info" onclick="startQuiz(${quiz.id})">
-                <strong style="color:var(--primary-glow)">${quiz.title}</strong><br>
-                <small style="color:var(--text-muted)">by ${quiz.creator}</small>
-            </div>
-            <button class="btn-delete" onclick="deleteQuiz(${quiz.id}, event)">
-                <i class="fas fa-trash"></i>
-            </button>
-        `;
-        list.appendChild(div);
-    });
-}
-
-function deleteQuiz(id, event) {
-    event.stopPropagation();
-    if(confirm("Are you sure you want to delete this Quiz?")) {
-        quizzes = quizzes.filter(q => q.id !== id);
-        localStorage.setItem('quizzes', JSON.stringify(quizzes));
-        showToast("🗑️ Quiz Deleted!", "error");
-        renderQuizList();
+    try {
+        const response = await fetch(`${API_URL}/quizzes`);
+        quizzes = await response.json(); // Update global quizzes from DB
+        
+        list.innerHTML = '';
+        if (quizzes.length === 0) { list.innerHTML = '<p style="text-align:center; color:var(--text-muted)">No quizzes yet.</p>'; return; }
+        
+        quizzes.forEach((quiz) => {
+            // MongoDB uses _id, but we need to handle both just in case
+            const quizId = quiz._id || quiz.id; 
+            
+            const div = document.createElement('div'); div.className = 'quiz-card';
+            div.innerHTML = `
+                <div class="quiz-info" onclick="startQuiz('${quizId}')">
+                    <strong style="color:var(--primary-glow)">${quiz.title}</strong><br>
+                    <small style="color:var(--text-muted)">by ${quiz.creator}</small>
+                </div>
+                <button class="btn-delete" onclick="deleteQuiz('${quizId}', event)">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+            list.appendChild(div);
+        });
+    } catch (error) {
+        list.innerHTML = '<p style="text-align:center; color:var(--danger)">Failed to load quizzes.</p>';
+        console.error("Load Error:", error);
     }
 }
 
-// --- 6. CREATE QUIZ ---
+async function deleteQuiz(id, event) {
+    event.stopPropagation();
+    if(confirm("Are you sure you want to delete this Quiz?")) {
+        try {
+            const response = await fetch(`${API_URL}/quiz/${id}`, { method: 'DELETE' });
+            const result = await response.json();
+            if(result.success) {
+                showToast("🗑️ Quiz Deleted!", "error");
+                renderQuizList(); // Refresh list
+            } else {
+                showToast("Failed to delete", "error");
+            }
+        } catch (error) {
+            showToast("Server Error", "error");
+        }
+    }
+}
+
+// --- 6. CREATE QUIZ (Save to DB) ---
 function showCreateQuiz() {
     document.getElementById('new-quiz-title').value = '';
     document.getElementById('questions-container').innerHTML = '';
@@ -131,7 +172,7 @@ function addQuestionInput() {
     container.appendChild(div);
 }
 
-function saveQuiz() {
+async function saveQuiz() {
     const title = document.getElementById('new-quiz-title').value.trim();
     if (!title) return showToast("⚠️ Enter Quiz Title!", "error");
     const qBlocks = document.querySelectorAll('.question-block');
@@ -154,14 +195,31 @@ function saveQuiz() {
     if(isError) return;
     if(newQuestions.length === 0) return showToast("⚠️ Add at least one question!", "error");
 
-    quizzes.push({ id: Date.now(), title, creator: currentUser, questions: newQuestions });
-    localStorage.setItem('quizzes', JSON.stringify(quizzes));
-    showToast("🎉 Quiz Published!", "success"); showDashboard();
+    const quizData = { title, creator: currentUser, questions: newQuestions };
+
+    try {
+        const response = await fetch(`${API_URL}/save-quiz`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(quizData)
+        });
+        const result = await response.json();
+        
+        if(result.success) {
+            showToast("🎉 Quiz Published!", "success"); 
+            showDashboard();
+        } else {
+            showToast("Failed to save quiz", "error");
+        }
+    } catch(err) {
+        showToast("Server Error", "error");
+    }
 }
 
-// --- 7. TAKE QUIZ ---
+// --- 7. TAKE QUIZ (Logic unchanged, works with loaded data) ---
 function startQuiz(quizId) {
-    const quiz = quizzes.find(q => q.id === quizId);
+    // Check both _id (MongoDB) and id (legacy)
+    const quiz = quizzes.find(q => q._id === quizId || q.id === quizId);
     if(!quiz) return showToast("Error loading quiz", "error");
 
     currentActiveQuiz = quiz;
@@ -263,37 +321,15 @@ function submitQuiz() {
     // 🔥 HEAVY CONFETTI LOGIC 🔥
     if (score === currentActiveQuiz.questions.length) {
         feedbackText.innerText = "🌟 Legendary! Vera Level!";
-        
-        // 3 SECONDS NON-STOP RAIN
         var duration = 3 * 1000;
         var end = Date.now() + duration;
-
         (function frame() {
-            // Left side blaster
-            confetti({
-                particleCount: 7,
-                angle: 60,
-                spread: 55,
-                origin: { x: 0 },
-                colors: ['#00f2ff', '#a200ff', '#ffffff']
-            });
-            // Right side blaster
-            confetti({
-                particleCount: 7,
-                angle: 120,
-                spread: 55,
-                origin: { x: 1 },
-                colors: ['#00f2ff', '#a200ff', '#ffffff']
-            });
-
-            if (Date.now() < end) {
-                requestAnimationFrame(frame);
-            }
+            confetti({ particleCount: 7, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#00f2ff', '#a200ff', '#ffffff'] });
+            confetti({ particleCount: 7, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#00f2ff', '#a200ff', '#ffffff'] });
+            if (Date.now() < end) requestAnimationFrame(frame);
         }());
-        
     } else if (score >= currentActiveQuiz.questions.length / 2) {
         feedbackText.innerText = "👍 Good Job! Passed!";
-        // SINGLE BIG BLAST (300 Particles)
         confetti({ particleCount: 300, spread: 100, origin: { y: 0.6 } });
     } else {
         feedbackText.innerText = "😐 Needs Improvement!";
