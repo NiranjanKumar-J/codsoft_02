@@ -1,10 +1,9 @@
-// --- 1. CONFIG & STATE ---
-const API_URL = 'http://localhost:5000'; // Server URL
+const API_URL = ''; 
+
 let currentUser = localStorage.getItem('currentUser') || null;
-let quizzes = []; // Data will come from Database now
+let quizzes = []; 
 let isLoginMode = true;
 
-// QUIZ & TIMER STATE
 let currentActiveQuiz = null;
 let currentQuestionIndex = 0;
 let userAnswers = [];
@@ -12,7 +11,6 @@ let timerInterval;
 let timeLeft = 15;
 const TIME_PER_QUESTION = 15;
 
-// --- 2. NOTIFICATIONS (TOAST) ---
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
@@ -26,13 +24,11 @@ function showToast(message, type = 'success') {
     }, 3000);
 }
 
-// --- 3. INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
     if (currentUser) showDashboard();
     else showSection('auth-section');
 });
 
-// --- 4. AUTH LOGIC (Connected to Server) ---
 function toggleAuthMode() {
     isLoginMode = !isLoginMode;
     const title = document.getElementById('auth-title');
@@ -79,7 +75,7 @@ async function handleAuth() {
         }
     } catch (error) {
         console.error(error);
-        showToast("Server Error: Is Node.js running?", "error");
+        showToast("Server Error. Check Internet.", "error");
     }
 }
 
@@ -90,7 +86,6 @@ function logout() {
     showSection('auth-section');
 }
 
-// --- 5. DASHBOARD & DELETE (Fetch from DB) ---
 function showDashboard() {
     document.getElementById('user-display').innerText = currentUser;
     renderQuizList();
@@ -103,13 +98,12 @@ async function renderQuizList() {
     
     try {
         const response = await fetch(`${API_URL}/quizzes`);
-        quizzes = await response.json(); // Update global quizzes from DB
+        quizzes = await response.json(); 
         
         list.innerHTML = '';
         if (quizzes.length === 0) { list.innerHTML = '<p style="text-align:center; color:var(--text-muted)">No quizzes yet.</p>'; return; }
         
         quizzes.forEach((quiz) => {
-            // MongoDB uses _id, but we need to handle both just in case
             const quizId = quiz._id || quiz.id; 
             
             const div = document.createElement('div'); div.className = 'quiz-card';
@@ -138,7 +132,7 @@ async function deleteQuiz(id, event) {
             const result = await response.json();
             if(result.success) {
                 showToast("🗑️ Quiz Deleted!", "error");
-                renderQuizList(); // Refresh list
+                renderQuizList(); 
             } else {
                 showToast("Failed to delete", "error");
             }
@@ -148,7 +142,7 @@ async function deleteQuiz(id, event) {
     }
 }
 
-// --- 6. CREATE QUIZ (Save to DB) ---
+
 function showCreateQuiz() {
     document.getElementById('new-quiz-title').value = '';
     document.getElementById('questions-container').innerHTML = '';
@@ -216,9 +210,7 @@ async function saveQuiz() {
     }
 }
 
-// --- 7. TAKE QUIZ (Logic unchanged, works with loaded data) ---
 function startQuiz(quizId) {
-    // Check both _id (MongoDB) and id (legacy)
     const quiz = quizzes.find(q => q._id === quizId || q.id === quizId);
     if(!quiz) return showToast("Error loading quiz", "error");
 
@@ -294,7 +286,6 @@ function nextQuestion() {
 }
 function prevQuestion() { currentQuestionIndex--; loadQuestion(); }
 
-// --- 🎉 SUBMIT WITH MASSIVE CONFETTI 🎆 ---
 function submitQuiz() {
     clearInterval(timerInterval);
     if (userAnswers[currentQuestionIndex] === null && timeLeft > 0) return showToast("⚠️ Select an answer!", "error");
@@ -318,7 +309,6 @@ function submitQuiz() {
 
     const feedbackText = document.getElementById('feedback-text');
     
-    // 🔥 HEAVY CONFETTI LOGIC 🔥
     if (score === currentActiveQuiz.questions.length) {
         feedbackText.innerText = "🌟 Legendary! Vera Level!";
         var duration = 3 * 1000;
@@ -344,7 +334,6 @@ function submitQuiz() {
 
 function toggleReview() { document.getElementById('review-container').classList.toggle('hidden'); }
 
-// --- UTILS ---
 function showSection(id) {
     document.querySelectorAll('.container').forEach(d => d.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
